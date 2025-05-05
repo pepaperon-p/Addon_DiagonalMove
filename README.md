@@ -3,6 +3,7 @@ RPGMakerUniteで斜め移動を実現します。<br />
 グリッド移動は維持していますので、当たり判定などは同じです。<br />
 <br />
 ※アドオンはパッチの管理用にご使用ください。
+※RMU ver1.2.2で作成しています。
 
 パッチの当て方等はこちらをご参照ください。<br />
 [【RPGツクール】RPGMakerUniteのアドオン(プラグイン)作成入門 初級編](https://qiita.com/pepaperon_p/items/5b0179164af22d2891e1 "【RPGツクール】RPGMakerUniteのアドオン(プラグイン)作成入門 初級編")
