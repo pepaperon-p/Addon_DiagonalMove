@@ -1,0 +1,897 @@
+diff --git a/CoreSystem/Knowledge/DataModel/Map/TileDataModel.cs b/CoreSystem/Knowledge/DataModel/Map/TileDataModel.cs
+index 63ef187..8677b7a 100644
+--- a/CoreSystem/Knowledge/DataModel/Map/TileDataModel.cs
++++ b/CoreSystem/Knowledge/DataModel/Map/TileDataModel.cs
+@@ -124,14 +124,26 @@ namespace RPGMaker.Codebase.CoreSystem.Knowledge.DataModel.Map
+          * 許可された移動方向か
+          */
+         private bool IsAllowedDirection(CharacterMoveDirectionEnum moveDirectionEnum) {
+-            return moveDirectionEnum switch
+-            {
+-                CharacterMoveDirectionEnum.Up => isPassBottom, // 上向きでの進入 = 下からの進入
+-                CharacterMoveDirectionEnum.Down => isPassTop, // 下向きでの進入 = 上からの進入
+-                CharacterMoveDirectionEnum.Left => isPassRight, // 左向きでの進入 = 右からの進入
+-                CharacterMoveDirectionEnum.Right => isPassLeft, // 右向きでの進入 = 左からの進入
+-                _ => throw new ArgumentOutOfRangeException(nameof(moveDirectionEnum), moveDirectionEnum, null)
+-            };
++            switch (moveDirectionEnum) {
++                case CharacterMoveDirectionEnum.Up:
++                    return isPassBottom;
++                case CharacterMoveDirectionEnum.Down:
++                    return isPassTop;
++                case CharacterMoveDirectionEnum.Left:
++                    return isPassRight;
++                case CharacterMoveDirectionEnum.Right:
++                    return isPassLeft;
++                case CharacterMoveDirectionEnum.UpLeft:
++                    return IsAllowedDirection(CharacterMoveDirectionEnum.Up) && IsAllowedDirection(CharacterMoveDirectionEnum.Left);
++                case CharacterMoveDirectionEnum.UpRight:
++                    return IsAllowedDirection(CharacterMoveDirectionEnum.Up) && IsAllowedDirection(CharacterMoveDirectionEnum.Right);
++                case CharacterMoveDirectionEnum.DownLeft:
++                    return IsAllowedDirection(CharacterMoveDirectionEnum.Down) && IsAllowedDirection(CharacterMoveDirectionEnum.Left);
++                case CharacterMoveDirectionEnum.DownRight:
++                    return IsAllowedDirection(CharacterMoveDirectionEnum.Down) && IsAllowedDirection(CharacterMoveDirectionEnum.Right);
++                default:
++                    return false;
++            }
+         }
+ 
+ 
+diff --git a/CoreSystem/Knowledge/Enum/CharacterMoveDirectionEnum.cs b/CoreSystem/Knowledge/Enum/CharacterMoveDirectionEnum.cs
+index e0aead6..d8c3911 100644
+--- a/CoreSystem/Knowledge/Enum/CharacterMoveDirectionEnum.cs
++++ b/CoreSystem/Knowledge/Enum/CharacterMoveDirectionEnum.cs
+@@ -9,6 +9,10 @@ namespace RPGMaker.Codebase.CoreSystem.Knowledge.Enum
+         Down,
+         Left,
+         Right,
++        UpLeft,
++        UpRight,
++        DownLeft,
++        DownRight,
+         Damage,
+         Max,
+         None = Max
+diff --git a/Runtime/Common/Enum/HandleType.cs b/Runtime/Common/Enum/HandleType.cs
+index 0cb04ef..f3e2b82 100644
+--- a/Runtime/Common/Enum/HandleType.cs
++++ b/Runtime/Common/Enum/HandleType.cs
+@@ -9,6 +9,10 @@ namespace RPGMaker.Codebase.Runtime.Common.Enum
+         Right, //右キー
+         Up, //上キー
+         Down, //下キー
++        UpLeft, //左上キー
++        UpRight, //右上キー
++        DownLeft, //左下キー
++        DownRight, //右下キー
+         Decide, //決定キー
+         Back, //戻るキー
+         LeftKeyDown, //左キー押下
+diff --git a/Runtime/Common/InputHandler.cs b/Runtime/Common/InputHandler.cs
+index f5ed118..e20786a 100644
+--- a/Runtime/Common/InputHandler.cs
++++ b/Runtime/Common/InputHandler.cs
+@@ -56,7 +56,23 @@ namespace RPGMaker.Codebase.Runtime.Common
+             _currentInputSystemState.UpdateOnWatch();
+ 
+             // 連続でキーを受け付けるもの
+-            if (_currentInputSystemState.CurrentInputSystemState(HandleType.Left))
++            if (_currentInputSystemState.CurrentInputSystemState(HandleType.UpLeft))
++            {
++                Handle(HandleType.UpLeft);
++            }
++            else if (_currentInputSystemState.CurrentInputSystemState(HandleType.UpRight))
++            {
++                Handle(HandleType.UpRight);
++            }
++            else if (_currentInputSystemState.CurrentInputSystemState(HandleType.DownLeft))
++            {
++                Handle(HandleType.DownLeft);
++            }
++            else if (_currentInputSystemState.CurrentInputSystemState(HandleType.DownRight))
++            {
++                Handle(HandleType.DownRight);
++            }
++            else if (_currentInputSystemState.CurrentInputSystemState(HandleType.Left))
+             {
+                 Handle(HandleType.Left);
+             }
+diff --git a/Runtime/GameState/InputSystemState.cs b/Runtime/GameState/InputSystemState.cs
+index 9e2ca7c..f02ccce 100644
+--- a/Runtime/GameState/InputSystemState.cs
++++ b/Runtime/GameState/InputSystemState.cs
+@@ -151,49 +151,62 @@ namespace RPGMaker.Codebase.Runtime.Common
+             _inputSystemState[HandleType.Right] = false;
+             _inputSystemState[HandleType.Up] = false;
+             _inputSystemState[HandleType.Down] = false;
++            _inputSystemState[HandleType.UpLeft] = false;
++            _inputSystemState[HandleType.UpRight] = false;
++            _inputSystemState[HandleType.DownLeft] = false;
++            _inputSystemState[HandleType.DownRight] = false;
+             _latestInputDic[HandleType.Left] = false;
+             _latestInputDic[HandleType.Right] = false;
+             _latestInputDic[HandleType.Up] = false;
+             _latestInputDic[HandleType.Down] = false;
++            _latestInputDic[HandleType.UpLeft] = false;
++            _latestInputDic[HandleType.UpRight] = false;
++            _latestInputDic[HandleType.DownLeft] = false;
++            _latestInputDic[HandleType.DownRight] = false;
+ 
+             //十字キーの大きさを取得
+             _move = context.ReadValue<Vector2>();
+ 
+-            if(Mathf.Abs(_move.x) >= Mathf.Abs(_move.y))
+-            {
++            // 8方向判定
++            if (_move.x <= -0.5f && _move.y >= 0.5f) {
++                _inputSystemState[HandleType.UpLeft] = true;
++                _latestInputDic[HandleType.UpLeft] = true;
++                _lastMoveDirection = HandleType.UpLeft;
++            } else if (_move.x >= 0.5f && _move.y >= 0.5f) {
++                _inputSystemState[HandleType.UpRight] = true;
++                _latestInputDic[HandleType.UpRight] = true;
++                _lastMoveDirection = HandleType.UpRight;
++            } else if (_move.x <= -0.5f && _move.y <= -0.5f) {
++                _inputSystemState[HandleType.DownLeft] = true;
++                _latestInputDic[HandleType.DownLeft] = true;
++                _lastMoveDirection = HandleType.DownLeft;
++            } else if (_move.x >= 0.5f && _move.y <= -0.5f) {
++                _inputSystemState[HandleType.DownRight] = true;
++                _latestInputDic[HandleType.DownRight] = true;
++                _lastMoveDirection = HandleType.DownRight;
++            } else if (Mathf.Abs(_move.x) >= Mathf.Abs(_move.y)) {
+                 //左右への移動
+-                if (_move.x <= -0.5)
+-                {
++                if (_move.x <= -0.5f) {
+                     _inputSystemState[HandleType.Left] = true;
+                     _latestInputDic[HandleType.Left] = true;
+                     _lastMoveDirection = HandleType.LeftKeyDown;
+-                }
+-                else if (_move.x >= 0.5)
+-                {
++                } else if (_move.x >= 0.5f) {
+                     _inputSystemState[HandleType.Right] = true;
+                     _latestInputDic[HandleType.Right] = true;
+                     _lastMoveDirection = HandleType.RightKeyDown;
+-                } else
+-                {
++                } else {
+                     _lastMoveDirection = HandleType.None;
+                 }
+-            }
+-            else
+-            {
+-                if (_move.y <= -0.5)
+-                {
++            } else {
++                if (_move.y <= -0.5f) {
+                     _inputSystemState[HandleType.Down] = true;
+                     _latestInputDic[HandleType.Down] = true;
+                     _lastMoveDirection = HandleType.DownKeyDown;
+-                }
+-                else if (_move.y >= 0.5)
+-                {
++                } else if (_move.y >= 0.5f) {
+                     _inputSystemState[HandleType.Up] = true;
+                     _latestInputDic[HandleType.Up] = true;
+                     _lastMoveDirection = HandleType.UpKeyDown;
+-                }
+-                else
+-                {
++                } else {
+                     _lastMoveDirection = HandleType.None;
+                 }
+             }
+@@ -301,6 +314,10 @@ namespace RPGMaker.Codebase.Runtime.Common
+             _inputSystemState[HandleType.LeftKeyDown] = false;
+             _inputSystemState[HandleType.UpKeyDown] = false;
+             _inputSystemState[HandleType.DownKeyDown] = false;
++            //_inputSystemState[HandleType.UpLeft] = false;
++            //_inputSystemState[HandleType.UpRight] = false;
++            //_inputSystemState[HandleType.DownLeft] = false;
++            //_inputSystemState[HandleType.DownRight] = false;
+ 
+             if (_lastMoveDirection != _postFrameMoveDirection && 
+                 _lastMoveDirection != HandleType.None)
+@@ -318,30 +335,37 @@ namespace RPGMaker.Codebase.Runtime.Common
+         /// <returns>押下されている時true</returns>
+         public bool CurrentInputSystemState(HandleType handleType) {
+             bool value = false;
+-            switch (handleType) {
+-                //連続でキー入力を受け付けるもの
+-                case HandleType.Left:
+-                case HandleType.Right:
+-                case HandleType.Up:
+-                case HandleType.Down:
+-                    return _inputSystemState[handleType];
+-                //1回発火したら終了するもの
+-                case HandleType.Decide:
+-                case HandleType.Back:
+-                case HandleType.RightClick:
+-                case HandleType.LeftKeyDown:
+-                case HandleType.RightKeyDown:
+-                case HandleType.UpKeyDown:
+-                case HandleType.DownKeyDown:
+-                case HandleType.LeftShiftDown:
+-                case HandleType.LeftShiftUp:
+-                case HandleType.PageLeft:
+-                case HandleType.PageRight:
+-                    value = _inputSystemState[handleType];
+-                    _inputSystemState[handleType] = false;
+-                    return value;
++            try {
++                switch (handleType) {
++                    //連続でキー入力を受け付けるもの
++                    case HandleType.Left:
++                    case HandleType.Right:
++                    case HandleType.Up:
++                    case HandleType.Down:
++                    case HandleType.UpLeft:
++                    case HandleType.UpRight:
++                    case HandleType.DownLeft:
++                    case HandleType.DownRight:
++                        return _inputSystemState[handleType];
++                    //1回発火したら終了するもの
++                    case HandleType.Decide:
++                    case HandleType.Back:
++                    case HandleType.RightClick:
++                    case HandleType.LeftKeyDown:
++                    case HandleType.RightKeyDown:
++                    case HandleType.UpKeyDown:
++                    case HandleType.DownKeyDown:
++                    case HandleType.LeftShiftDown:
++                    case HandleType.LeftShiftUp:
++                    case HandleType.PageLeft:
++                    case HandleType.PageRight:
++                        value = _inputSystemState[handleType];
++                        _inputSystemState[handleType] = false;
++                        return value;
++                }
++            } catch (System.Collections.Generic.KeyNotFoundException) {
++                return false;
+             }
+-
+             return false;
+         }
+ 
+@@ -352,7 +376,12 @@ namespace RPGMaker.Codebase.Runtime.Common
+         /// <returns></returns>
+         public bool OnDown(HandleType handleType) {
+             PlayerInput pInput = GetComponent<PlayerInput>();
+-            if (handleType == HandleType.Left || handleType == HandleType.Right || handleType == HandleType.Up || handleType == HandleType.Down)
++            if (
++                handleType == HandleType.Left || handleType == HandleType.Right ||
++                handleType == HandleType.Up || handleType == HandleType.Down ||
++                handleType == HandleType.UpLeft || handleType == HandleType.UpRight ||
++                handleType == HandleType.DownLeft || handleType == HandleType.DownRight
++            )
+             {
+                 return _inputSystemState[handleType];
+             }
+@@ -383,7 +412,12 @@ namespace RPGMaker.Codebase.Runtime.Common
+         /// <returns></returns>
+         public bool OnUp(HandleType handleType) {
+             PlayerInput pInput = GetComponent<PlayerInput>();
+-            if (handleType == HandleType.Left || handleType == HandleType.Right || handleType == HandleType.Up || handleType == HandleType.Down)
++            if (
++                handleType == HandleType.Left || handleType == HandleType.Right ||
++                handleType == HandleType.Up || handleType == HandleType.Down ||
++                handleType == HandleType.UpLeft || handleType == HandleType.UpRight ||
++                handleType == HandleType.DownLeft || handleType == HandleType.DownRight
++            )
+             {
+                 return _inputSystemState[handleType];
+             }
+@@ -405,7 +439,12 @@ namespace RPGMaker.Codebase.Runtime.Common
+         /// <returns></returns>
+         public bool OnPress(HandleType handleType) {
+             PlayerInput pInput = GetComponent<PlayerInput>();
+-            if (handleType == HandleType.Left || handleType == HandleType.Right || handleType == HandleType.Up || handleType == HandleType.Down)
++            if (
++                handleType == HandleType.Left || handleType == HandleType.Right ||
++                handleType == HandleType.Up || handleType == HandleType.Down ||
++                handleType == HandleType.UpLeft || handleType == HandleType.UpRight ||
++                handleType == HandleType.DownLeft || handleType == HandleType.DownRight
++            )
+             {
+                 return _inputSystemState[handleType];
+             }
+diff --git a/Runtime/Map/Component/Character/CharacterGraphic.cs b/Runtime/Map/Component/Character/CharacterGraphic.cs
+index b4c952f..de47051 100644
+--- a/Runtime/Map/Component/Character/CharacterGraphic.cs
++++ b/Runtime/Map/Component/Character/CharacterGraphic.cs
+@@ -212,6 +212,10 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+                 CharacterMoveDirectionEnum.Down => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Left => _leftDirectionSprite,
+                 CharacterMoveDirectionEnum.Right => _rightDirectionSprite,
++                CharacterMoveDirectionEnum.UpLeft => _upDirectionSprite,
++                CharacterMoveDirectionEnum.UpRight => _upDirectionSprite,
++                CharacterMoveDirectionEnum.DownLeft => _downDirectionSprite,
++                CharacterMoveDirectionEnum.DownRight => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Damage => _damageSprite,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+@@ -240,6 +244,10 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+                 CharacterMoveDirectionEnum.Down => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Left => _leftDirectionSprite,
+                 CharacterMoveDirectionEnum.Right => _rightDirectionSprite,
++                CharacterMoveDirectionEnum.UpLeft => _upDirectionSprite,
++                CharacterMoveDirectionEnum.UpRight => _upDirectionSprite,
++                CharacterMoveDirectionEnum.DownLeft => _downDirectionSprite,
++                CharacterMoveDirectionEnum.DownRight => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Damage => _damageSprite,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+@@ -283,6 +291,10 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+                 CharacterMoveDirectionEnum.Down => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Left => _leftDirectionSprite,
+                 CharacterMoveDirectionEnum.Right => _rightDirectionSprite,
++                CharacterMoveDirectionEnum.UpLeft => _upDirectionSprite,
++                CharacterMoveDirectionEnum.UpRight => _upDirectionSprite,
++                CharacterMoveDirectionEnum.DownLeft => _downDirectionSprite,
++                CharacterMoveDirectionEnum.DownRight => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Damage => _damageSprite,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+@@ -303,6 +315,10 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+                 CharacterMoveDirectionEnum.Down => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Left => _leftDirectionSprite,
+                 CharacterMoveDirectionEnum.Right => _rightDirectionSprite,
++                CharacterMoveDirectionEnum.UpLeft => _upDirectionSprite,
++                CharacterMoveDirectionEnum.UpRight => _upDirectionSprite,
++                CharacterMoveDirectionEnum.DownLeft => _downDirectionSprite,
++                CharacterMoveDirectionEnum.DownRight => _downDirectionSprite,
+                 CharacterMoveDirectionEnum.Damage => _damageSprite,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+diff --git a/Runtime/Map/Component/Character/CharacterOnMap.cs b/Runtime/Map/Component/Character/CharacterOnMap.cs
+index de7a6c8..6020ca1 100644
+--- a/Runtime/Map/Component/Character/CharacterOnMap.cs
++++ b/Runtime/Map/Component/Character/CharacterOnMap.cs
+@@ -521,6 +521,24 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+             if (directionEnum == CharacterMoveDirectionEnum.Down) y_next = y_now - 1;
+             if (directionEnum == CharacterMoveDirectionEnum.Left) x_next = x_now - 1;
+             if (directionEnum == CharacterMoveDirectionEnum.Right) x_next = x_now + 1;
++            // 斜め方向の処理を追加
++            if (directionEnum == CharacterMoveDirectionEnum.UpLeft) {
++                x_next = x_now - 1;
++                y_next = y_now + 1;
++                destinationPositionOnTile = _currentPositionOnTile + new Vector2(-1, 1);
++            } else if (directionEnum == CharacterMoveDirectionEnum.UpRight) {
++                x_next = x_now + 1;
++                y_next = y_now + 1;
++                destinationPositionOnTile = _currentPositionOnTile + new Vector2(1, 1);
++            } else if (directionEnum == CharacterMoveDirectionEnum.DownLeft) {
++                x_next = x_now - 1;
++                y_next = y_now - 1;
++                destinationPositionOnTile = _currentPositionOnTile + new Vector2(-1, -1);
++            } else if (directionEnum == CharacterMoveDirectionEnum.DownRight) {
++                x_next = x_now + 1;
++                y_next = y_now - 1;
++                destinationPositionOnTile = _currentPositionOnTile + new Vector2(1, -1);
++            }
+             _lastMoveDirectionEnum = directionEnum;
+ 
+             // U343 プレイヤーor パーティメンバーのみ判定
+@@ -1199,5 +1217,33 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Character
+             }
+             actorCanvas.sortingLayerID = MapRenderingOrderManager.GetVehicleSortingLayerId(LayerType);
+         }
++
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        public void MoveUpLeftOneUnit([CanBeNull] Action callback = null) {
++            MoveToPositionOnTile(CharacterMoveDirectionEnum.UpLeft, _currentPositionOnTile + new Vector2(-1, 1), callback);
++        }
++        public void MoveUpRightOneUnit([CanBeNull] Action callback = null) {
++            MoveToPositionOnTile(CharacterMoveDirectionEnum.UpRight, _currentPositionOnTile + new Vector2(1, 1), callback);
++        }
++        public void MoveDownLeftOneUnit([CanBeNull] Action callback = null) {
++            MoveToPositionOnTile(CharacterMoveDirectionEnum.DownLeft, _currentPositionOnTile + new Vector2(-1, -1), callback);
++        }
++        public void MoveDownRightOneUnit([CanBeNull] Action callback = null) {
++            MoveToPositionOnTile(CharacterMoveDirectionEnum.DownRight, _currentPositionOnTile + new Vector2(1, -1), callback);
++        }
++#else
++        public async Task MoveUpLeftOneUnit([CanBeNull] Action callback = null) {
++            await MoveToPositionOnTile(CharacterMoveDirectionEnum.UpLeft, _currentPositionOnTile + new Vector2(-1, 1), callback);
++        }
++        public async Task MoveUpRightOneUnit([CanBeNull] Action callback = null) {
++            await MoveToPositionOnTile(CharacterMoveDirectionEnum.UpRight, _currentPositionOnTile + new Vector2(1, 1), callback);
++        }
++        public async Task MoveDownLeftOneUnit([CanBeNull] Action callback = null) {
++            await MoveToPositionOnTile(CharacterMoveDirectionEnum.DownLeft, _currentPositionOnTile + new Vector2(-1, -1), callback);
++        }
++        public async Task MoveDownRightOneUnit([CanBeNull] Action callback = null) {
++            await MoveToPositionOnTile(CharacterMoveDirectionEnum.DownRight, _currentPositionOnTile + new Vector2(1, -1), callback);
++        }
++#endif
+     }
+ }
+\ No newline at end of file
+diff --git a/Runtime/Map/Component/MapLoop.cs b/Runtime/Map/Component/MapLoop.cs
+index bbb7e8a..b2c2b70 100644
+--- a/Runtime/Map/Component/MapLoop.cs
++++ b/Runtime/Map/Component/MapLoop.cs
+@@ -240,34 +240,57 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Map
+ #endif
+             switch (direction)
+             {
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL                
+                 case CharacterMoveDirectionEnum.Up:
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                     MapLoopUp(_actorOnMap);
+-#else
+-                    await MapLoopUp(_actorOnMap);
+-#endif
+                     break;
+                 case CharacterMoveDirectionEnum.Down:
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                     MapLoopDown(_actorOnMap);
+-#else
+-                    await MapLoopDown(_actorOnMap);
+-#endif
+                     break;
+                 case CharacterMoveDirectionEnum.Left:
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                     MapLoopLeft(_actorOnMap);
+-#else
+-                    await MapLoopLeft(_actorOnMap);
+-#endif
+                     break;
+                 case CharacterMoveDirectionEnum.Right:
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                     MapLoopRight(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.UpLeft:
++                    MapLoopUpLeft(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.UpRight:
++                    MapLoopUpRight(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.DownLeft:
++                    MapLoopDownLeft(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.DownRight:
++                    MapLoopDownRight(_actorOnMap);
++                    break;
+ #else
++                case CharacterMoveDirectionEnum.Up:
++                    await MapLoopUp(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.Down:
++                    await MapLoopDown(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.Left:
++                    await MapLoopLeft(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.Right:
+                     await MapLoopRight(_actorOnMap);
+-#endif
+                     break;
++                case CharacterMoveDirectionEnum.UpLeft:
++                    await MapLoopUpLeft(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.UpRight:
++                    await MapLoopUpRight(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.DownLeft:
++                    await MapLoopDownLeft(_actorOnMap);
++                    break;
++                case CharacterMoveDirectionEnum.DownRight:
++                    await MapLoopDownRight(_actorOnMap);
++                    break;
++#endif                    
+                 default:
+                     throw new ArgumentOutOfRangeException(nameof(direction), direction, null);
+             }
+@@ -860,6 +883,43 @@ namespace RPGMaker.Codebase.Runtime.Map.Component.Map
+                 }
+         }
+ 
++        // 斜め方向のループ処理を追加
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        public void MapLoopUpLeft(CharacterOnMap actorMap) {
++            MapLoopUp(actorMap);
++            MapLoopLeft(actorMap);
++        }
++        public void MapLoopUpRight(CharacterOnMap actorMap) {
++            MapLoopUp(actorMap);
++            MapLoopRight(actorMap);
++        }
++        public void MapLoopDownLeft(CharacterOnMap actorMap) {
++            MapLoopDown(actorMap);
++            MapLoopLeft(actorMap);
++        }
++        public void MapLoopDownRight(CharacterOnMap actorMap) {
++            MapLoopDown(actorMap);
++            MapLoopRight(actorMap);
++        }
++#else
++        public async Task MapLoopUpLeft(CharacterOnMap actorMap) {
++            await MapLoopUp(actorMap);
++            await MapLoopLeft(actorMap);
++        }
++        public async Task MapLoopUpRight(CharacterOnMap actorMap) {
++            await MapLoopUp(actorMap);
++            await MapLoopRight(actorMap);
++        }
++        public async Task MapLoopDownLeft(CharacterOnMap actorMap) {
++            await MapLoopDown(actorMap);
++            await MapLoopLeft(actorMap);
++        }
++        public async Task MapLoopDownRight(CharacterOnMap actorMap) {
++            await MapLoopDown(actorMap);
++            await MapLoopRight(actorMap);
++        }
++#endif
++
+         private void MoveTile(Tilemap tilemap, Vector3Int srcPos, Vector3Int dstPos) {
+             var tile = tilemap.GetTile<TileBase>(srcPos);
+             if (tile == null) return;
+diff --git a/Runtime/Map/MapManager.cs b/Runtime/Map/MapManager.cs
+index 0668bfd..d4a792e 100644
+--- a/Runtime/Map/MapManager.cs
++++ b/Runtime/Map/MapManager.cs
+@@ -851,6 +851,37 @@ namespace RPGMaker.Codebase.Runtime.Map
+                     if (!_initScene)
+                     {
+                         //キー入力の登録
++                        InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.UpLeft,
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            TryToMoveUpLeftCharacter);
++#else
++                            () => { _ = TryToMoveUpLeftCharacter(); });
++#endif
++                        InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.UpRight,
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            TryToMoveUpRightCharacter);
++#else
++                            () => { _ = TryToMoveUpRightCharacter(); });
++#endif
++                        InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.DownLeft,
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            TryToMoveDownLeftCharacter);
++#else
++                            () => { _ = TryToMoveDownLeftCharacter(); });
++#endif
++                        InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.DownRight,
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            TryToMoveDownRightCharacter);
++#else
++                            () => { _ = TryToMoveDownRightCharacter(); });
++#endif
++                        InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.UpRight,
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            TryToMoveUpRightCharacter);
++#else
++                            () => { _ = TryToMoveUpRightCharacter(); });
++#endif
++
+                         InputDistributor.AddInputHandler(GameStateHandler.GameState.MAP, HandleType.Left,
+ #if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                             TryToMoveLeftCharacter);
+@@ -2298,6 +2329,10 @@ namespace RPGMaker.Codebase.Runtime.Map
+                 CharacterMoveDirectionEnum.Right => Vector2.right,
+                 CharacterMoveDirectionEnum.Up => Vector2.up,
+                 CharacterMoveDirectionEnum.Down => Vector2.down,
++                CharacterMoveDirectionEnum.UpLeft => Vector2.up + Vector2.left,
++                CharacterMoveDirectionEnum.UpRight => Vector2.up + Vector2.right,
++                CharacterMoveDirectionEnum.DownLeft => Vector2.down + Vector2.left,
++                CharacterMoveDirectionEnum.DownRight => Vector2.down + Vector2.right,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+         }
+@@ -2314,6 +2349,10 @@ namespace RPGMaker.Codebase.Runtime.Map
+                 CharacterMoveDirectionEnum.Right => Vector2Int.right,
+                 CharacterMoveDirectionEnum.Up => Vector2Int.up,
+                 CharacterMoveDirectionEnum.Down => Vector2Int.down,
++                CharacterMoveDirectionEnum.UpLeft => Vector2Int.up + Vector2Int.left,
++                CharacterMoveDirectionEnum.UpRight => Vector2Int.up + Vector2Int.right,
++                CharacterMoveDirectionEnum.DownLeft => Vector2Int.down + Vector2Int.left,
++                CharacterMoveDirectionEnum.DownRight => Vector2Int.down + Vector2Int.right,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+         }
+@@ -2516,6 +2555,10 @@ namespace RPGMaker.Codebase.Runtime.Map
+                 CharacterMoveDirectionEnum.Right => _actorOnMap.GetCurrentPositionOnTile() + Vector2.right * 2,
+                 CharacterMoveDirectionEnum.Up => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up * 2,
+                 CharacterMoveDirectionEnum.Down => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down * 2,
++                CharacterMoveDirectionEnum.UpLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.left * 2,
++                CharacterMoveDirectionEnum.UpRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.right * 2,
++                CharacterMoveDirectionEnum.DownLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.left * 2,
++                CharacterMoveDirectionEnum.DownRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.right * 2,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+ 
+@@ -2647,6 +2690,10 @@ namespace RPGMaker.Codebase.Runtime.Map
+                 CharacterMoveDirectionEnum.Right => _actorOnMap.GetCurrentPositionOnTile() + Vector2.right,
+                 CharacterMoveDirectionEnum.Up => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up,
+                 CharacterMoveDirectionEnum.Down => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down,
++                CharacterMoveDirectionEnum.UpLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.left,
++                CharacterMoveDirectionEnum.UpRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.right,
++                CharacterMoveDirectionEnum.DownLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.left,
++                CharacterMoveDirectionEnum.DownRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.right,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+ 
+@@ -2983,6 +3030,78 @@ namespace RPGMaker.Codebase.Runtime.Map
+ #endif
+                     break;
+ 
++                case CharacterMoveDirectionEnum.UpLeft:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _vehicleOnMap.MoveUpLeftOneUnit(CheckProcess);
++                    _actorOnMap.MoveUpLeftOneUnit();
++                    _partyOnMap?.ForEach(v => v.MoveUpLeftOneUnit());
++#else
++                    await _vehicleOnMap.MoveUpLeftOneUnit(() => { _ = CheckProcess(); });
++                    await _actorOnMap.MoveUpLeftOneUnit();
++                    if (_partyOnMap != null)
++                    {
++                        foreach (var v in _partyOnMap)
++                        {
++                            await v.MoveUpLeftOneUnit();
++                        }
++                    }
++#endif
++                    break;
++
++                case CharacterMoveDirectionEnum.UpRight:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _vehicleOnMap.MoveUpRightOneUnit(CheckProcess);
++                    _actorOnMap.MoveUpRightOneUnit();
++                    _partyOnMap?.ForEach(v => v.MoveUpRightOneUnit());
++#else
++                    await _vehicleOnMap.MoveUpRightOneUnit(() => { _ = CheckProcess(); });
++                    await _actorOnMap.MoveUpRightOneUnit();
++                    if (_partyOnMap != null)
++                    {
++                        foreach (var v in _partyOnMap)
++                        {
++                            await v.MoveUpRightOneUnit();
++                        }
++                    }
++#endif
++                    break;
++
++                case CharacterMoveDirectionEnum.DownLeft:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _vehicleOnMap.MoveDownLeftOneUnit(CheckProcess);
++                    _actorOnMap.MoveDownLeftOneUnit();
++                    _partyOnMap?.ForEach(v => v.MoveDownLeftOneUnit());
++#else
++                    await _vehicleOnMap.MoveDownLeftOneUnit(() => { _ = CheckProcess(); });
++                    await _actorOnMap.MoveDownLeftOneUnit();
++                    if (_partyOnMap != null)
++                    {
++                        foreach (var v in _partyOnMap)
++                        {
++                            await v.MoveDownLeftOneUnit();
++                        }
++                    }
++#endif
++                    break;
++
++                case CharacterMoveDirectionEnum.DownRight:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _vehicleOnMap.MoveDownRightOneUnit(CheckProcess);
++                    _actorOnMap.MoveDownRightOneUnit();
++                    _partyOnMap?.ForEach(v => v.MoveDownRightOneUnit());
++#else
++                    await _vehicleOnMap.MoveDownRightOneUnit(() => { _ = CheckProcess(); });
++                    await _actorOnMap.MoveDownRightOneUnit();
++                    if (_partyOnMap != null)
++                    {
++                        foreach (var v in _partyOnMap)
++                        {
++                            await v.MoveDownRightOneUnit();
++                        }
++                    }
++#endif
++                    break;
++
+                 default:
+                     throw new ArgumentOutOfRangeException(nameof(directionEnum), directionEnum, null);
+             }
+@@ -3008,6 +3127,62 @@ namespace RPGMaker.Codebase.Runtime.Map
+         }
+ 
+         // Actionへの代入時に内容が確認しやすいように、各向き分メソッドを用意。
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        private static void TryToMoveUpLeftCharacter() {
++#else
++        private static async Task TryToMoveUpLeftCharacter() {
++#endif
++#if USE_CHARACTER_MOVE_AS
++            CancelMove();
++#endif
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++            TryToMoveCharacter(CharacterMoveDirectionEnum.UpLeft);
++#else
++            await TryToMoveCharacter(CharacterMoveDirectionEnum.UpLeft);
++#endif
++        }
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        private static void TryToMoveUpRightCharacter() {
++#else
++        private static async Task TryToMoveUpRightCharacter() {
++#endif
++#if USE_CHARACTER_MOVE_AS
++            CancelMove();
++#endif
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++            TryToMoveCharacter(CharacterMoveDirectionEnum.UpRight);
++#else
++            await TryToMoveCharacter(CharacterMoveDirectionEnum.UpRight);
++#endif
++        }
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        private static void TryToMoveDownLeftCharacter() {
++#else
++        private static async Task TryToMoveDownLeftCharacter() {
++#endif
++#if USE_CHARACTER_MOVE_AS
++            CancelMove();
++#endif
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++            TryToMoveCharacter(CharacterMoveDirectionEnum.DownLeft);
++#else
++            await TryToMoveCharacter(CharacterMoveDirectionEnum.DownLeft);
++#endif
++        }
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++        private static void TryToMoveDownRightCharacter() {
++#else
++        private static async Task TryToMoveDownRightCharacter() {
++#endif
++#if USE_CHARACTER_MOVE_AS
++            CancelMove();
++#endif
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++            TryToMoveCharacter(CharacterMoveDirectionEnum.DownRight);
++#else
++            await TryToMoveCharacter(CharacterMoveDirectionEnum.DownRight);
++#endif
++        }
+ #if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+         private static void TryToMoveLeftCharacter() {
+ #else
+@@ -3136,6 +3311,10 @@ namespace RPGMaker.Codebase.Runtime.Map
+                 CharacterMoveDirectionEnum.Right => _actorOnMap.GetCurrentPositionOnTile() + Vector2.right,
+                 CharacterMoveDirectionEnum.Up => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up,
+                 CharacterMoveDirectionEnum.Down => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down,
++                CharacterMoveDirectionEnum.UpLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.left,
++                CharacterMoveDirectionEnum.UpRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.up + Vector2.right,
++                CharacterMoveDirectionEnum.DownLeft => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.left,
++                CharacterMoveDirectionEnum.DownRight => _actorOnMap.GetCurrentPositionOnTile() + Vector2.down + Vector2.right,
+                 _ => throw new ArgumentOutOfRangeException()
+             };
+ 
+@@ -3334,6 +3513,34 @@ namespace RPGMaker.Codebase.Runtime.Map
+                     _actorOnMap.MoveRightOneUnit(CheckProcess);
+ #else
+                     await _actorOnMap.MoveRightOneUnit(() => { _ = CheckProcess(); });
++#endif
++                    break;
++                case CharacterMoveDirectionEnum.UpLeft:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _actorOnMap.MoveUpLeftOneUnit(CheckProcess);
++#else
++                    await _actorOnMap.MoveUpLeftOneUnit(() => { _ = CheckProcess(); });
++#endif
++                    break;
++                case CharacterMoveDirectionEnum.UpRight:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _actorOnMap.MoveUpRightOneUnit(CheckProcess);
++#else
++                    await _actorOnMap.MoveUpRightOneUnit(() => { _ = CheckProcess(); });
++#endif
++                    break;
++                case CharacterMoveDirectionEnum.DownLeft:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _actorOnMap.MoveDownLeftOneUnit(CheckProcess);
++#else
++                    await _actorOnMap.MoveDownLeftOneUnit(() => { _ = CheckProcess(); });
++#endif
++                    break;
++                case CharacterMoveDirectionEnum.DownRight:
++#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                    _actorOnMap.MoveDownRightOneUnit(CheckProcess);
++#else
++                    await _actorOnMap.MoveDownRightOneUnit(() => { _ = CheckProcess(); });
+ #endif
+                     break;
+                 default:
+@@ -4462,57 +4669,63 @@ namespace RPGMaker.Codebase.Runtime.Map
+                         //移動完了時点でキー入力が行われている場合、次の移動を試みる
+                         if (_moveType == _moveTypeEnum.Actor)
+                         {
+-                            if (InputHandler.OnPress(Common.Enum.HandleType.Left))
+ #if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            if (InputHandler.OnPress(Common.Enum.HandleType.UpLeft))
++                                TryToMoveCharacter(CharacterMoveDirectionEnum.UpLeft);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.UpRight))
++                                TryToMoveCharacter(CharacterMoveDirectionEnum.UpRight);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.DownLeft))
++                                TryToMoveCharacter(CharacterMoveDirectionEnum.DownLeft);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.DownRight))
++                                TryToMoveCharacter(CharacterMoveDirectionEnum.DownRight);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Left))
+                                 TryToMoveCharacter(CharacterMoveDirectionEnum.Left);
+-#else
+-                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Left);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Right))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveCharacter(CharacterMoveDirectionEnum.Right);
+-#else
+-                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Right);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Up))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveCharacter(CharacterMoveDirectionEnum.Up);
+-#else
+-                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Up);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Down))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveCharacter(CharacterMoveDirectionEnum.Down);
+ #else
++                            if (InputHandler.OnPress(Common.Enum.HandleType.UpLeft))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.UpLeft);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.UpRight))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.UpRight);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.DownLeft))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.DownLeft);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.DownRight))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.DownRight);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Left))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Left);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Right))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Right);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Up))
++                                await TryToMoveCharacter(CharacterMoveDirectionEnum.Up);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Down))
+                                 await TryToMoveCharacter(CharacterMoveDirectionEnum.Down);
+-#endif
++#endif                                
+                         }
+                         else
+                         {
+-                            if (InputHandler.OnPress(Common.Enum.HandleType.Left))
+ #if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
++                            if (InputHandler.OnPress(Common.Enum.HandleType.Left))
+                                 TryToMoveVehicle(CharacterMoveDirectionEnum.Left);
+-#else
+-                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Left);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Right))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveVehicle(CharacterMoveDirectionEnum.Right);
+-#else
+-                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Right);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Up))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveVehicle(CharacterMoveDirectionEnum.Up);
+-#else
+-                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Up);
+-#endif
+                             else if (InputHandler.OnPress(Common.Enum.HandleType.Down))
+-#if (UNITY_EDITOR && !UNITE_WEBGL_TEST) || !UNITY_WEBGL
+                                 TryToMoveVehicle(CharacterMoveDirectionEnum.Down);
+ #else
++                            if (InputHandler.OnPress(Common.Enum.HandleType.Left))
++                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Left);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Right))
++                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Right);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Up))
++                                await TryToMoveVehicle(CharacterMoveDirectionEnum.Up);
++                            else if (InputHandler.OnPress(Common.Enum.HandleType.Down))
+                                 await TryToMoveVehicle(CharacterMoveDirectionEnum.Down);
+-#endif
++#endif                                
+                         }
+                     }
+                 }
